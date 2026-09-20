@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Klabs Tools</title>
+  <desc id="desc">A geometric zone mark in amber on a dark background.</desc>
+  <rect width="64" height="64" rx="15" fill="#11161b"/>
+  <path d="M16 20.5 31 12l17 9.5v22L32 53 16 42.5z" fill="#f2b84b" fill-opacity=".14" stroke="#f2b84b" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="m20.5 36 8.2-15.5 15.8 7-8.7 15.2z" fill="#f2b84b" fill-opacity=".28" stroke="#f2b84b" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="20.5" cy="36" r="3.2" fill="#eef2f8"/>
+  <circle cx="28.7" cy="20.5" r="3.2" fill="#eef2f8"/>
+  <circle cx="44.5" cy="27.5" r="3.2" fill="#eef2f8"/>
+  <circle cx="35.8" cy="42.7" r="3.2" fill="#eef2f8"/>
+</svg>
