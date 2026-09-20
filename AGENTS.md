@@ -10,6 +10,12 @@ The first working tool is Zone Maker, a canvas editor for creating, tuning, and 
 
 ## Start here
 
+## Git workflow
+
+Keep main deployable. Work on a separate branch for each change, push that branch, and open a pull request targeting main. Merge through the pull request after review and checks pass; do not make routine changes directly on main.
+
+Suggested branch prefixes are feature/, fix/, docs/, and chore/. Before opening a pull request, run npm run build:pages and include user-visible behavior or validation details in the pull request description. The root README.md contains the standard branch and pull request commands.
+
 Read these files before making a structural change:
 
 - .ai/README.md — documentation map and project rules.
