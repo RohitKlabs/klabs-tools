@@ -26,9 +26,9 @@ The build also copies these public files:
 
 ## Automation
 
-.github/workflows/deploy-pages.yml runs when a version tag beginning with `v` is pushed, such as `v0.0.1`, and it can also be started with a manual dispatch. Normal pushes to `main` do not deploy. It uses Node 20, npm ci, npm run build:pages, actions/upload-pages-artifact, and actions/deploy-pages.
+.github/workflows/deploy-pages.yml runs on pushes to `main` and can also be started with a manual dispatch. Version tags such as `v0.0.1` are release markers only; they do not trigger a separate deployment because the GitHub Pages environment is protected for the main branch. It uses Node 20, npm ci, npm run build:pages, actions/upload-pages-artifact, and actions/deploy-pages.
 
-To publish a release, push the source changes and then push an annotated version tag:
+To publish a change and then mark it as a release, push `main` first. The push deploys the site, and the tag identifies the released commit:
 
 ~~~bash
 git push origin main

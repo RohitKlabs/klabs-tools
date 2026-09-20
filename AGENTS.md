@@ -83,7 +83,7 @@ For route changes, verify /, the relevant landing route, and the direct app rout
 
 ## GitHub Pages
 
-The deployment workflow runs when a version tag beginning with `v` is pushed, such as `v0.0.1`; normal pushes to main do not deploy. It can also be started manually with workflow dispatch. It installs from package-lock.json, runs npm run build:pages, uploads dist, and deploys through GitHub Pages. The repository uses the custom domain tools.klabs.in.
+The deployment workflow runs on pushes to main; it can also be started manually with workflow dispatch. Version tags such as `v0.0.1` identify releases but do not trigger a separate deployment because the GitHub Pages environment is protected for the main branch. It installs from package-lock.json, runs npm run build:pages, uploads dist, and deploys through GitHub Pages. The repository uses the custom domain tools.klabs.in.
 
 Release deployment example:
 
