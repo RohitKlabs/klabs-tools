@@ -14,7 +14,7 @@ export class HomePage extends HTMLElement {
       '  </section>',
       '  <section class="directory" aria-labelledby="directory-title">',
       '    <div class="directory-heading"><div><p class="eyebrow">The directory</p><h2 id="directory-title">Find a tool for the job.</h2></div><label class="tool-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search tools" aria-label="Search tools" /></label></div>',
-      '    <div class="directory-toolbar"><div class="category-tabs" role="tablist" aria-label="Filter tools by category">' + CATEGORIES.map((category, index) => '<button type="button" class="category-tab' + (index === 0 ? ' active' : '') + '" data-category="' + category + '" role="tab" aria-selected="' + (index === 0) + '">' + category + '</button>').join('') + '</div><span class="tool-count" aria-live="polite"></span></div>',
+      '    <div class="directory-toolbar"><div class="category-tabs" role="group" aria-label="Filter tools by category">' + CATEGORIES.map((category, index) => '<button type="button" class="category-tab' + (index === 0 ? ' active' : '') + '" data-category="' + category + '" aria-pressed="' + (index === 0) + '">' + category + '</button>').join('') + '</div><span class="tool-count" aria-live="polite"></span></div>',
       '    <div class="tool-grid" data-tool-grid></div><p class="empty-tools" hidden>No tools match that search yet.</p>',
       '  </section>',
       '  <section class="home-note" aria-label="About Klabs Tools"><span class="home-note-mark">✦</span><p>Built by Klabs for curious people who prefer tools that get out of the way.</p></section>',
@@ -35,7 +35,7 @@ export class HomePage extends HTMLElement {
       this.querySelectorAll('.category-tab').forEach((tab) => {
         const active = tab === button;
         tab.classList.toggle('active', active);
-        tab.setAttribute('aria-selected', active);
+        tab.setAttribute('aria-pressed', active);
       });
       this.renderTools();
     });
@@ -55,10 +55,11 @@ export class HomePage extends HTMLElement {
 
   renderCard(tool) {
     const available = tool.status === 'Available now';
+    const detailsAction = tool.landingPath ? '<a class="tool-card-link" href="' + tool.landingPath + '" data-route>View details <b aria-hidden="true">↗</b></a>' : '<span class="tool-card-link is-disabled" aria-disabled="true">Details coming soon</span>';
     return '<article class="tool-card tool-card-' + tool.accent + (available ? '' : ' is-coming') + '">' +
       '<div class="tool-card-top"><span class="tool-icon">' + tool.icon + '</span><span class="tool-status">' + tool.status + '</span></div>' +
       '<div class="tool-card-body"><p class="tool-category">' + tool.category + '</p><h3>' + tool.name + '</h3><p>' + tool.shortDescription + '</p></div>' +
-      '<div class="tool-card-actions"><a class="tool-card-link" href="' + (tool.landingPath || '#') + '" data-route>View details <b>↗</b></a>' +
+      '<div class="tool-card-actions">' + detailsAction +
       (available ? '<a class="tool-card-open" href="' + tool.appPath + '" data-route>Open tool</a>' : '<span class="tool-card-open disabled">Coming soon</span>') + '</div></article>';
   }
 }
