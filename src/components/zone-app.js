@@ -21,7 +21,7 @@ export class ZoneApp extends HTMLElement {
     this.importer = this.querySelector('point-import');
     this.exporter = this.querySelector('zone-export');
     this.zoomValue = this.querySelector('[data-zoom-value]');
-    this.querySelector('.workflow-actions').addEventListener('click', (event) => { const button = event.target.closest('[data-tool]'); if (!button) return; const tools = { preset: this.preset, import: this.importer, export: this.exporter }; tools[button.dataset.tool].open(); });
+    this.querySelector('.workflow-actions').addEventListener('click', (event) => { const button = event.target.closest('[data-tool]'); if (!button) return; const tools = { preset: this.preset, import: this.importer, export: this.exporter }; tools[button.dataset.tool].open(button); });
     this.querySelector('.zoom-controls').addEventListener('click', (event) => { const button = event.target.closest('[data-zoom]'); if (!button || button.disabled) return; this.stage.setZoom(button.dataset.zoom); this.updateZoomControls(); });
     this.addEventListener('view-change', () => this.updateZoomControls());
     this.addEventListener('preset-selected', (event) => { this.store.update({ shape: event.detail.shape, count: event.detail.count }); this.store.regenerate(); });
@@ -45,6 +45,8 @@ export class ZoneApp extends HTMLElement {
 
   render(state) {
     this.dataset.theme = state.theme;
+    const themeButton = this.querySelector('.theme-toggle');
+    if (themeButton) { themeButton.firstChild.textContent = (state.theme === 'dark' ? 'Light mode' : 'Dark mode') + ' '; themeButton.setAttribute('aria-label', state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'); }
     this.stage.data = state;
     this.controls.data = state;
     this.preset.data = state;

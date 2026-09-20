@@ -19,7 +19,7 @@ export class ZoneStage extends HTMLElement {
   }
 
   connectedCallback() {
-    this.innerHTML = '<canvas width="1000" height="640" aria-label="Interactive zone canvas. Drag to pan, use the mouse wheel or pinch to zoom."></canvas><div class="legend"><span><i class="swatch points"></i>input points</span><span><i class="swatch hull"></i>active boundary</span><span class="compare-legend"><i class="swatch compare"></i>convex reference</span></div>';
+    this.innerHTML = '<canvas width="1000" height="640" tabindex="0" aria-label="Interactive zone canvas. Drag to pan, use the mouse wheel or pinch to zoom. Focus the canvas and use arrow keys to pan."></canvas><div class="legend"><span><i class="swatch points"></i>input points</span><span><i class="swatch hull"></i>active boundary</span><span class="compare-legend"><i class="swatch compare"></i>convex reference</span><span class="stage-help">Drag to pan · wheel or pinch to zoom · arrow keys to nudge</span></div>';
     this.canvas = this.querySelector('canvas');
     this.context = this.canvas.getContext('2d');
     this.canvas.addEventListener('pointerdown', (event) => this.startPan(event));
@@ -28,6 +28,7 @@ export class ZoneStage extends HTMLElement {
     this.canvas.addEventListener('pointercancel', (event) => this.endPan(event));
     this.canvas.addEventListener('lostpointercapture', (event) => this.endPan(event));
     this.canvas.addEventListener('wheel', (event) => this.zoomFromWheel(event), { passive: false });
+    this.canvas.addEventListener('keydown', (event) => this.panFromKeyboard(event));
     new ResizeObserver(() => this.draw()).observe(this);
   }
 
@@ -94,6 +95,18 @@ export class ZoneStage extends HTMLElement {
     const [focalX, focalY] = this.canvasPoint(event.clientX, event.clientY);
     const nextZoom = this.zoom * Math.exp(-event.deltaY * unit * 0.0015);
     this.zoomTo(nextZoom, focalX, focalY);
+    event.preventDefault();
+  }
+
+  panFromKeyboard(event) {
+    const distance = event.shiftKey ? 64 : 32;
+    const offsets = { ArrowLeft: [-distance, 0], ArrowRight: [distance, 0], ArrowUp: [0, -distance], ArrowDown: [0, distance] };
+    const offset = offsets[event.key];
+    if (!offset) return;
+    this.pan.x += offset[0];
+    this.pan.y += offset[1];
+    this.draw();
+    this.emitViewChange();
     event.preventDefault();
   }
 
