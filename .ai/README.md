@@ -4,6 +4,8 @@ This folder is the durable project context for contributors and coding agents. K
 
 ## Documents
 
+- contributing.md — branch, pull request, validation, and merge workflow.
+
 - architecture.md — runtime composition and event/data flow.
 - routing.md — SPA routes, metadata, navigation, and fallback behavior.
 - tools.md — catalog schema and the process for adding a tool.
