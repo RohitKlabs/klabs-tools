@@ -1,0 +1,8 @@
+{
+  "name": "klabs-tools",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build", "build:pages": "npm run build && node scripts/prepare-pages.mjs", "preview": "vite preview" },
+  "devDependencies": { "vite": "^6.1.0" }
+}
