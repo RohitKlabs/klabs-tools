@@ -14,6 +14,11 @@ const ROUTES = {
     title: 'Zone Maker Workspace · Klabs Tools',
     description: 'Build, inspect, and export geographic work zones from scattered points.',
   },
+  jtetPracticeLanding: {
+    path: '/tools/jtet-practice',
+    title: 'JTET Practice · Paper II quizzes and mock tests',
+    description: 'Practice JTET Paper II with topic-wise quizzes, full mock tests, and explanations.',
+  },
 };
 
 function normalizePath(pathname) {
@@ -25,6 +30,7 @@ export function getRoute(pathname = window.location.pathname) {
   const path = normalizePath(pathname);
   if (path === ROUTES.zoneMaker.path) return 'zoneMaker';
   if (path === ROUTES.zoneMakerLanding.path) return 'zoneMakerLanding';
+  if (path === ROUTES.jtetPracticeLanding.path) return 'jtetPracticeLanding';
   return 'home';
 }
 
@@ -68,7 +74,9 @@ export class AppRouter extends HTMLElement {
       ? '<zone-app></zone-app>'
       : routeName === 'zoneMakerLanding'
         ? '<tool-landing-page tool="zone-maker"></tool-landing-page>'
-        : '<home-page></home-page>';
+        : routeName === 'jtetPracticeLanding'
+          ? '<tool-landing-page tool="jtet-practice"></tool-landing-page>'
+          : '<home-page></home-page>';
     window.scrollTo(0, 0);
   }
 }

@@ -13,6 +13,21 @@ export const TOOLS = [
     features: ['Paste or import point data', 'Tune the boundary in real time', 'Pan, zoom, and export the result'],
   },
   {
+    slug: 'jtet-practice',
+    name: 'JTET Practice',
+    category: 'Education',
+    status: 'Available now',
+    icon: '✎',
+    accent: 'violet',
+    description: 'Practice JTET Paper II with topic-wise quizzes and full mock tests, with explanations and progress kept in your browser.',
+    shortDescription: 'Practice JTET Paper II questions and mocks.',
+    landingPath: '/tools/jtet-practice',
+    // Standalone static page in public/; open with a full page load, not the SPA router.
+    appPath: '/tools/jtet-practice/app/',
+    staticApp: true,
+    features: ['Topic-wise practice across CDP, English, Mundari and Social Science', 'Timed 150-question mocks in the exam pattern', 'Progress history saved on this device'],
+  },
+  {
     slug: 'json-viewer',
     name: 'JSON Viewer',
     category: 'Data',

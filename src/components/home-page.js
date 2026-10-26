@@ -60,6 +60,6 @@ export class HomePage extends HTMLElement {
       '<div class="tool-card-top"><span class="tool-icon">' + tool.icon + '</span><span class="tool-status">' + tool.status + '</span></div>' +
       '<div class="tool-card-body"><p class="tool-category">' + tool.category + '</p><h3>' + tool.name + '</h3><p>' + tool.shortDescription + '</p></div>' +
       '<div class="tool-card-actions">' + detailsAction +
-      (available ? '<a class="tool-card-open" href="' + tool.appPath + '" data-route>Open tool</a>' : '<span class="tool-card-open disabled">Coming soon</span>') + '</div></article>';
+      (available ? '<a class="tool-card-open" href="' + tool.appPath + '"' + (tool.staticApp ? '' : ' data-route') + '>Open tool</a>' : '<span class="tool-card-open disabled">Coming soon</span>') + '</div></article>';
   }
 }

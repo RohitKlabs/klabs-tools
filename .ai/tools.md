@@ -7,6 +7,7 @@ src/data/tools.js is the single source for directory cards and landing-page cont
 | Slug | Name | Category | State | Landing | App |
 | --- | --- | --- | --- | --- | --- |
 | zone-maker | Zone Maker | Spatial | Available now | /tools/zone-maker | /tools/zone-maker/app |
+| jtet-practice | JTET Practice | Education | Available now | /tools/jtet-practice | /tools/jtet-practice/app/ (static page in public/, staticApp: true) |
 | json-viewer | JSON Viewer | Data | Coming soon | — | — |
 | text-toolkit | Text Toolkit | Text | Coming soon | — | — |
 | color-lab | Color Lab | Design | Coming soon | — | — |

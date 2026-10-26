@@ -7,6 +7,8 @@
 | / | home | <home-page> | Tool directory and discovery page |
 | /tools/zone-maker | zoneMakerLanding | <tool-landing-page tool="zone-maker"> | Public Zone Maker landing page |
 | /tools/zone-maker/app | zoneMaker | <zone-app> | Direct interactive editor |
+| /tools/jtet-practice | jtetPracticeLanding | <tool-landing-page tool="jtet-practice"> | Public JTET Practice landing page |
+| /tools/jtet-practice/app/ | — (static file) | public/tools/jtet-practice/app/index.html | Standalone page served directly by Pages; links omit data-route |
 
 Unknown paths currently fall back to the home page. If a real not-found page is introduced later, update getRoute() and SEO behavior together.
 
