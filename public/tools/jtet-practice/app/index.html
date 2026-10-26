@@ -580,6 +580,7 @@ function renderHome(){
     '<div class="card stack" style="gap:10px"><h3>Short on time?</h3><p class="muted" style="margin:0">A 50-question mini mock in the same section ratio: 10 CDP, 10 English, 10 Mundari, 20 Social Science.</p>'+
       '<div class="row"><button class="btn" data-act="mini">Start mini mock · 50 min</button><button class="btn ghost" data-go="practice">Practise by topic →</button></div></div></section>';
   out += renderSync();
+  out += '<p class="note">Privacy: this app records your test progress, answers and activity, along with device details such as browser, screen size, IP address and approximate location, to save your work across devices and improve the practice tests. Use "Clear all data" in History to delete your progress.</p>';
   if(!storageOK) out += '<p class="note">Your browser is blocking storage, so progress will not be saved after you close this page.</p>';
   return out;
 }
