@@ -260,9 +260,17 @@ function save(){
 // ---------- online sync (test-series.klabs.in) ----------
 var API = "https://test-series.klabs.in/api";
 var SKEY = "jtet2.sync.v1";
-var SY = {id:"", name:"", updated:0}, syncStatus = "";
-try { var sr = JSON.parse(localStorage.getItem(SKEY)||"null"); if(sr && sr.id) SY = {id:sr.id, name:sr.name||"", updated:sr.updated||0}; } catch(e){}
+var SY = {id:"", name:"", updated:0, auto:false}, syncStatus = "";
+try { var sr = JSON.parse(localStorage.getItem(SKEY)||"null"); if(sr && sr.id) SY = {id:sr.id, name:sr.name||"", updated:sr.updated||0, auto:!!sr.auto}; } catch(e){}
 if(!SY.id){ var rb = new Uint8Array(16); (window.crypto||window.msCrypto).getRandomValues(rb); SY.id = Array.prototype.map.call(rb,function(b){ return ("0"+b.toString(16)).slice(-2); }).join(""); saveSync(); }
+// Everyone is tracked and backed up from the first visit; until they type a name they get a random guest name.
+if(!SY.name){ SY.name = guestName(); SY.auto = true; saveSync(); }
+function guestName(){
+  var A = ["Brave","Bright","Calm","Clever","Eager","Gentle","Happy","Kind","Lucky","Quick","Sharp","Smart","Steady","Sunny","Swift","Wise"];
+  var N = ["Tiger","Peacock","Elephant","Deer","Falcon","Lotus","Mango","Sal","Banyan","River","Hill","Star","Owl","Koel","Bison","Parrot"];
+  var r = new Uint8Array(3); window.crypto.getRandomValues(r);
+  return "Guest "+A[r[0]%A.length]+" "+N[r[1]%N.length]+" "+(10+r[2]%90);
+}
 function saveSync(){ try{ localStorage.setItem(SKEY, JSON.stringify(SY)); }catch(e){} }
 var pushT = null;
 function queuePush(){ if(!SY.name || pushT) return; pushT = setTimeout(function(){ pushT=null; push(); }, 4000); }
@@ -375,8 +383,10 @@ function block(why){
 }
 
 function renderSync(){
-  if(!SY.name) return '<section class="card stack" style="gap:10px"><h3>Save your progress online</h3><p class="muted" style="margin:0">Enter your name to back up your tests and accuracy, and to continue on another phone or computer.</p>'+
-    '<form class="row" data-form="sync"><input id="syncname" maxlength="60" placeholder="Your name" autocomplete="name" required style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit"><button class="btn primary">Start saving</button><button type="button" class="btn ghost" data-act="restore">I have a code</button></form></section>';
+  if(SY.auto) return '<section class="card stack" style="gap:10px"><div class="row"><h3>Your progress is saved online</h3><span class="spacer"></span><span class="muted" id="syncstat" style="font-size:13px">'+esc(syncStatus)+'</span></div>'+
+    '<p class="muted" style="margin:0">You\'re saved as <b style="color:var(--ink)">'+esc(SY.name)+'</b>. Add your name so your progress is easy to find, or enter a code to continue from another device.</p>'+
+    '<form class="row" data-form="sync"><input id="syncname" maxlength="60" placeholder="Your name" autocomplete="name" required style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit"><button class="btn primary">Save my name</button><button type="button" class="btn ghost" data-act="restore">I have a code</button></form>'+
+    '<p class="muted" style="margin:0;font-size:13px">Your code: <b class="num" style="color:var(--ink);word-break:break-all">'+esc(SY.id)+'</b> <button class="btn sm ghost" data-act="copycode">Copy</button></p></section>';
   return '<section class="card stack" style="gap:8px"><div class="row"><h3>Saved online as '+esc(SY.name)+'</h3><span class="spacer"></span><span class="muted" id="syncstat" style="font-size:13px">'+esc(syncStatus)+'</span></div>'+
     '<p class="muted" style="margin:0;font-size:13.5px">To continue on another device, open this page there and enter your code: <b class="num" style="color:var(--ink);word-break:break-all">'+esc(SY.id)+'</b></p>'+
     '<div class="row"><button class="btn sm" data-act="copycode">Copy code</button><button class="btn sm ghost" data-act="restore">Use a different code</button></div></section>';
@@ -804,10 +814,10 @@ document.addEventListener("click", function(e){
     case "clear": ask({title:"Clear all saved data?",body:"This deletes your test history, topic accuracy and any test in progress from this browser"+(SY.name?" and your online copy":"")+". It cannot be undone.",yes:"Clear everything",danger:true,run:function(){ track("clear_data",{tests:S.attempts.length}); S={attempts:[],qs:{},active:null}; save(); go("home"); }}); break;
     case "copycode": track("copy_code"); (navigator.clipboard? navigator.clipboard.writeText(SY.id) : Promise.reject()).then(function(){ toast("Code copied."); }, function(){ toast("Your code: "+SY.id); }); break;
     case "restore": ask({title:"Continue from another device", body:'Enter the code shown on your other device. Progress on this device will be replaced with the saved progress.<input id="rcode" placeholder="Your code" autocomplete="off" style="display:block;width:100%;margin-top:10px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit">', yes:"Load progress", run:function(){
-      var code=((document.getElementById("rcode")||{}).value||"").trim().toLowerCase(), old={id:SY.id,name:SY.name,updated:SY.updated};
+      var code=((document.getElementById("rcode")||{}).value||"").trim().toLowerCase(), old={id:SY.id,name:SY.name,updated:SY.updated,auto:SY.auto};
       render();
       if(!/^[a-z0-9_-]{16,64}$/.test(code)){ toast("That code doesn't look right."); return; }
-      SY.id=code; SY.name=""; pull(true).then(function(){ track("restore_ok",{syncId:SY.id, from:old.id, tests:S.attempts.length}); identify(); toast("Progress loaded. Welcome back, "+SY.name+"."); render(); }, function(e){ track("restore_fail",{code:code, reason:e==="nf"?"not found":"network"}); SY=old; saveSync(); toast(e==="nf" ? "No saved progress found for that code." : "Couldn't reach the server. Try again in a moment."); });
+      SY.id=code; SY.name=""; pull(true).then(function(){ SY.auto=/^Guest /.test(SY.name); saveSync(); track("restore_ok",{syncId:SY.id, from:old.id, tests:S.attempts.length}); identify(); toast("Progress loaded. Welcome back, "+SY.name+"."); render(); }, function(e){ track("restore_fail",{code:code, reason:e==="nf"?"not found":"network"}); SY=old; saveSync(); toast(e==="nf" ? "No saved progress found for that code." : "Couldn't reach the server. Try again in a moment."); });
     }}); break;
     case "cno": view.confirm=null; render(); if(view.name==="exam") startTick(); break;
     case "cyes": var c=view.confirm; view.confirm=null; if(c&&c.run) c.run(); else render(); break;
@@ -823,9 +833,9 @@ document.addEventListener("keydown", function(e){
 document.addEventListener("submit", function(e){
   if(e.target.dataset.form!=="sync") return; e.preventDefault();
   var n=document.getElementById("syncname").value.trim().slice(0,60); if(!n) return;
-  SY.name=n; if(!SY.updated) SY.updated=Date.now(); saveSync(); setStatus("Saving…"); render();
-  track("sync_start",{name:n, syncId:SY.id}); identify();
-  push().then(function(){ toast("Your progress is now saved online."); });
+  var from=SY.name; SY.name=n; SY.auto=false; if(!SY.updated) SY.updated=Date.now(); saveSync(); setStatus("Saving…"); render();
+  track("set_name",{name:n, from:from, syncId:SY.id}); identify();
+  push().then(function(){ toast("Thanks, "+n+". Your progress is saved under your name."); });
 });
 function flush(){ if(BLOCKED) return; save(); beaconQ(); if(pushT){ clearTimeout(pushT); pushT=null; push(); } }
 window.addEventListener("pagehide", flush);
