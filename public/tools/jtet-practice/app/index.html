@@ -249,7 +249,58 @@ var KEY = "jtet2.practice.v1";
 var S = {attempts:[], qs:{}, active:null};
 try { var raw = localStorage.getItem(KEY); if(raw){ var p = JSON.parse(raw); if(p && typeof p==="object"){ S.attempts=p.attempts||[]; S.qs=p.qs||{}; S.active=p.active||null; } } } catch(e){}
 var storageOK = true;
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); storageOK=true; }catch(e){ storageOK=false; } }
+var lastJSON = JSON.stringify(S);
+function save(){
+  var j = JSON.stringify(S), changed = j!==lastJSON; lastJSON = j;
+  if(changed){ SY.updated = Date.now(); saveSync(); queuePush(); }
+  try{ localStorage.setItem(KEY, j); storageOK=true; }catch(e){ storageOK=false; }
+}
+
+// ---------- online sync (test-series.klabs.in) ----------
+var API = "https://test-series.klabs.in/api";
+var SKEY = "jtet2.sync.v1";
+var SY = {id:"", name:"", updated:0}, syncStatus = "";
+try { var sr = JSON.parse(localStorage.getItem(SKEY)||"null"); if(sr && sr.id) SY = {id:sr.id, name:sr.name||"", updated:sr.updated||0}; } catch(e){}
+if(!SY.id){ var rb = new Uint8Array(16); (window.crypto||window.msCrypto).getRandomValues(rb); SY.id = Array.prototype.map.call(rb,function(b){ return ("0"+b.toString(16)).slice(-2); }).join(""); saveSync(); }
+function saveSync(){ try{ localStorage.setItem(SKEY, JSON.stringify(SY)); }catch(e){} }
+var pushT = null;
+function queuePush(){ if(!SY.name || pushT) return; pushT = setTimeout(function(){ pushT=null; push(); }, 4000); }
+function setStatus(s){ syncStatus=s; var el=document.getElementById("syncstat"); if(el) el.textContent=s; }
+function push(){
+  if(!SY.name) return;
+  var body = JSON.stringify({id:SY.id, name:SY.name, state:S, updated:SY.updated});
+  // text/plain keeps this a simple CORS request (no preflight); keepalive lets it finish on page close.
+  return fetch(API+"/sync", {method:"POST", headers:{"Content-Type":"text/plain"}, body:body, keepalive: body.length<60000})
+    .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+    .then(function(d){ setStatus("Saved online"); if(d.stale) pull(false); })
+    .catch(function(){ setStatus("Offline, will retry"); });
+}
+function pull(force){
+  return fetch(API+"/state/"+SY.id, {cache:"no-store"}).then(function(r){
+    if(r.status===404) return null; if(!r.ok) throw 0; return r.json();
+  }).then(function(d){
+    if(!d){ if(force) throw "nf"; if(SY.name) push(); return false; }
+    if(!SY.name) SY.name = d.name;
+    if(force || d.updated > SY.updated){
+      var p = d.state||{}; S = {attempts:p.attempts||[], qs:p.qs||{}, active:p.active||null};
+      lastJSON = JSON.stringify(S); SY.updated = d.updated; SY.name = d.name;
+      try{ localStorage.setItem(KEY, lastJSON); }catch(e){}
+      saveSync(); setStatus("Saved online");
+      if(view.name!=="exam") render();
+      return true;
+    }
+    saveSync(); setStatus("Saved online");
+    if(d.updated < SY.updated) push();
+    return false;
+  }).catch(function(e){ if(e!=="nf") setStatus("Offline, will retry"); if(force) throw e; });
+}
+function renderSync(){
+  if(!SY.name) return '<section class="card stack" style="gap:10px"><h3>Save your progress online</h3><p class="muted" style="margin:0">Enter your name to back up your tests and accuracy, and to continue on another phone or computer.</p>'+
+    '<form class="row" data-form="sync"><input id="syncname" maxlength="60" placeholder="Your name" autocomplete="name" required style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit"><button class="btn primary">Start saving</button><button type="button" class="btn ghost" data-act="restore">I have a code</button></form></section>';
+  return '<section class="card stack" style="gap:8px"><div class="row"><h3>Saved online as '+esc(SY.name)+'</h3><span class="spacer"></span><span class="muted" id="syncstat" style="font-size:13px">'+esc(syncStatus)+'</span></div>'+
+    '<p class="muted" style="margin:0;font-size:13.5px">To continue on another device, open this page there and enter your code: <b class="num" style="color:var(--ink);word-break:break-all">'+esc(SY.id)+'</b></p>'+
+    '<div class="row"><button class="btn sm" data-act="copycode">Copy code</button><button class="btn sm ghost" data-act="restore">Use a different code</button></div></section>';
+}
 
 // ---------- helpers ----------
 function esc(s){ return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
@@ -436,6 +487,7 @@ function renderHome(){
       '<div class="row"><button class="btn primary" data-act="weak">Weak-area drill · 25 Q</button><button class="btn" data-act="mistakes"'+(mis?'':' disabled')+'>Replay mistakes · '+mis+'</button></div></div>'+
     '<div class="card stack" style="gap:10px"><h3>Short on time?</h3><p class="muted" style="margin:0">A 50-question mini mock in the same section ratio: 10 CDP, 10 English, 10 Mundari, 20 Social Science.</p>'+
       '<div class="row"><button class="btn" data-act="mini">Start mini mock · 50 min</button><button class="btn ghost" data-go="practice">Practise by topic →</button></div></div></section>';
+  out += renderSync();
   if(!storageOK) out += '<p class="note">Your browser is blocking storage, so progress will not be saved after you close this page.</p>';
   return out;
 }
@@ -664,7 +716,14 @@ document.addEventListener("click", function(e){
       ask({title: t.mode==="practice"?"Finish this practice set?":"Submit the test?", body:'<span class="num">Answered <b>'+ansN+'</b> · Unanswered <b>'+left+'</b>'+(t.mode==="exam"?' · Marked for review <b>'+mk+'</b>':'')+(t.dur?' · Time left <b>'+fmtTime(t.dur-t.elapsed)+'</b>':'')+'</span>'+(left&&t.mode==="exam"?'<br>Unanswered questions are scored as zero.':''), yes: t.mode==="practice"?"Finish":"Submit", no:"Keep going", run:finish}); break;
     case "review": go("review"); break;
     case "toresult": go("result"); break;
-    case "clear": ask({title:"Clear all saved data?",body:"This deletes your test history, topic accuracy and any test in progress from this browser. It cannot be undone.",yes:"Clear everything",danger:true,run:function(){ S={attempts:[],qs:{},active:null}; save(); go("home"); }}); break;
+    case "clear": ask({title:"Clear all saved data?",body:"This deletes your test history, topic accuracy and any test in progress from this browser"+(SY.name?" and your online copy":"")+". It cannot be undone.",yes:"Clear everything",danger:true,run:function(){ S={attempts:[],qs:{},active:null}; save(); go("home"); }}); break;
+    case "copycode": (navigator.clipboard? navigator.clipboard.writeText(SY.id) : Promise.reject()).then(function(){ toast("Code copied."); }, function(){ toast("Your code: "+SY.id); }); break;
+    case "restore": ask({title:"Continue from another device", body:'Enter the code shown on your other device. Progress on this device will be replaced with the saved progress.<input id="rcode" placeholder="Your code" autocomplete="off" style="display:block;width:100%;margin-top:10px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit">', yes:"Load progress", run:function(){
+      var code=((document.getElementById("rcode")||{}).value||"").trim().toLowerCase(), old={id:SY.id,name:SY.name,updated:SY.updated};
+      render();
+      if(!/^[a-z0-9_-]{16,64}$/.test(code)){ toast("That code doesn't look right."); return; }
+      SY.id=code; SY.name=""; pull(true).then(function(){ toast("Progress loaded. Welcome back, "+SY.name+"."); render(); }, function(e){ SY=old; saveSync(); toast(e==="nf" ? "No saved progress found for that code." : "Couldn't reach the server. Try again in a moment."); });
+    }}); break;
     case "cno": view.confirm=null; render(); if(view.name==="exam") startTick(); break;
     case "cyes": var c=view.confirm; view.confirm=null; if(c&&c.run) c.run(); else render(); break;
   }
@@ -676,10 +735,18 @@ document.addEventListener("keydown", function(e){
   else if(e.key==="ArrowRight"){ if(t.cur<t.qids.length-1) move(t.cur+1); }
   else if(e.key==="ArrowLeft"){ move(t.cur-1); }
 });
-window.addEventListener("pagehide", save);
-document.addEventListener("visibilitychange", function(){ if(document.hidden) save(); });
+document.addEventListener("submit", function(e){
+  if(e.target.dataset.form!=="sync") return; e.preventDefault();
+  var n=document.getElementById("syncname").value.trim().slice(0,60); if(!n) return;
+  SY.name=n; if(!SY.updated) SY.updated=Date.now(); saveSync(); setStatus("Saving…"); render();
+  push().then(function(){ toast("Your progress is now saved online."); });
+});
+function flush(){ save(); if(pushT){ clearTimeout(pushT); pushT=null; push(); } }
+window.addEventListener("pagehide", flush);
+document.addEventListener("visibilitychange", function(){ if(document.hidden) flush(); });
 
 render();
+if(SY.name){ setStatus("Checking…"); pull(false); }
 })();
 </script>
 
