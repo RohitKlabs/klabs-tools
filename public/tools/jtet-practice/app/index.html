@@ -251,6 +251,7 @@ try { var raw = localStorage.getItem(KEY); if(raw){ var p = JSON.parse(raw); if(
 var storageOK = true;
 var lastJSON = JSON.stringify(S);
 function save(){
+  if(BLOCKED) return; // another tab owns this browser's progress
   var j = JSON.stringify(S), changed = j!==lastJSON; lastJSON = j;
   if(changed){ SY.updated = Date.now(); saveSync(); queuePush(); }
   try{ localStorage.setItem(KEY, j); storageOK=true; }catch(e){ storageOK=false; }
@@ -268,7 +269,7 @@ function queuePush(){ if(!SY.name || pushT) return; pushT = setTimeout(function(
 function setStatus(s){ syncStatus=s; var el=document.getElementById("syncstat"); if(el) el.textContent=s; }
 function push(){
   if(!SY.name) return;
-  var body = JSON.stringify({id:SY.id, name:SY.name, state:S, updated:SY.updated});
+  var body = JSON.stringify({id:SY.id, name:SY.name, state:S, updated:SY.updated, device:DEV});
   // text/plain keeps this a simple CORS request (no preflight); keepalive lets it finish on page close.
   return fetch(API+"/sync", {method:"POST", headers:{"Content-Type":"text/plain"}, body:body, keepalive: body.length<60000})
     .then(function(r){ if(!r.ok) throw 0; return r.json(); })
@@ -282,6 +283,7 @@ function pull(force){
     if(!d){ if(force) throw "nf"; if(SY.name) push(); return false; }
     if(!SY.name) SY.name = d.name;
     if(force || d.updated > SY.updated){
+      track("sync_pull",{updated:d.updated, local:SY.updated, forced:!!force});
       var p = d.state||{}; S = {attempts:p.attempts||[], qs:p.qs||{}, active:p.active||null};
       lastJSON = JSON.stringify(S); SY.updated = d.updated; SY.name = d.name;
       try{ localStorage.setItem(KEY, lastJSON); }catch(e){}
@@ -294,6 +296,84 @@ function pull(force){
     return false;
   }).catch(function(e){ if(e!=="nf") setStatus("Offline, will retry"); if(force) throw e; });
 }
+// ---------- device identity, activity log, live connection ----------
+// One UUID per browser (localStorage). Events queue in localStorage and are sent over socket.io with acks;
+// on page close they also go out by sendBeacon (the server de-duplicates by event id).
+// Only one tab per browser is live: a newer tab (or a newer connection for this UUID) blocks the older one.
+var DKEY = "jtet2.device.v1", QKEY = "jtet2.evq.v1", TKEY = "jtet2.tab.v1";
+var BLOCKED = false, sock = null, evSending = false, evSeq = 0;
+var TAB = Math.random().toString(36).slice(2);
+var DEV = null; try{ DEV = localStorage.getItem(DKEY); }catch(e){}
+if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(DEV||"")){ DEV = uuid4(); try{ localStorage.setItem(DKEY, DEV); }catch(e){} }
+function uuid4(){
+  var c = window.crypto; if(c && c.randomUUID) return c.randomUUID();
+  var b = new Uint8Array(16); c.getRandomValues(b); b[6] = b[6]&15|64; b[8] = b[8]&63|128;
+  var h = Array.prototype.map.call(b,function(x){ return ("0"+x.toString(16)).slice(-2); }).join("");
+  return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
+}
+var EVQ = []; try{ EVQ = JSON.parse(localStorage.getItem(QKEY)||"[]") || []; }catch(e){ EVQ = []; }
+function saveQ(){ try{ localStorage.setItem(QKEY, JSON.stringify(EVQ)); }catch(e){} }
+function track(type, data){
+  if(BLOCKED) return;
+  EVQ.push({eid: Date.now().toString(36)+"-"+(evSeq++).toString(36)+"-"+TAB.slice(0,4), t: Date.now(), type: type, data: data==null? null : data});
+  if(EVQ.length>1000) EVQ.splice(0, EVQ.length-1000);
+  saveQ(); flushQ();
+}
+function flushQ(){
+  if(!sock || !sock.connected || evSending || !EVQ.length) return;
+  evSending = true; var batch = EVQ.slice(0, 100);
+  sock.timeout(10000).emit("evs", batch, function(err, res){
+    evSending = false; if(err || !res || !res.ok) return;
+    var sent = {}; batch.forEach(function(e){ sent[e.eid] = 1; });
+    EVQ = EVQ.filter(function(e){ return !sent[e.eid]; }); saveQ();
+    if(EVQ.length) flushQ();
+  });
+}
+function beaconQ(){
+  if(!EVQ.length || !navigator.sendBeacon) return;
+  try{ navigator.sendBeacon(API+"/events", new Blob([JSON.stringify({uuid:DEV, syncId: SY.name? SY.id : null, events: EVQ.slice(-200)})], {type:"text/plain"})); }catch(e){}
+}
+function deviceInfo(){
+  var n = navigator, s = screen, c = n.connection || {}, mm = function(q){ try{ return matchMedia(q).matches; }catch(e){ return null; } }, o = {};
+  try{
+    o = {ua:n.userAgent, platform:n.platform, vendor:n.vendor, language:n.language, languages: n.languages? Array.prototype.slice.call(n.languages) : null,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, tzOffset: -new Date().getTimezoneOffset(),
+      screen:{w:s.width, h:s.height, aw:s.availWidth, ah:s.availHeight, depth:s.colorDepth}, viewport:{w:innerWidth, h:innerHeight}, dpr: window.devicePixelRatio,
+      orientation: s.orientation && s.orientation.type, touch: n.maxTouchPoints, cores: n.hardwareConcurrency, memory: n.deviceMemory,
+      connection: c.effectiveType? {type:c.effectiveType, downlink:c.downlink, rtt:c.rtt, saveData:c.saveData} : null,
+      cookies: n.cookieEnabled, dnt: n.doNotTrack, webdriver: n.webdriver, pdf: n.pdfViewerEnabled,
+      standalone: mm("(display-mode: standalone)") || n.standalone===true, dark: mm("(prefers-color-scheme: dark)"), reducedMotion: mm("(prefers-reduced-motion: reduce)"),
+      url: location.href, referrer: document.referrer || null};
+    if(n.userAgentData) o.uaData = {brands:n.userAgentData.brands, mobile:n.userAgentData.mobile, platform:n.userAgentData.platform};
+  }catch(e){ o.ua = n.userAgent; }
+  var ps = [];
+  try{ if(n.userAgentData && n.userAgentData.getHighEntropyValues) ps.push(n.userAgentData.getHighEntropyValues(["platformVersion","architecture","model","bitness","fullVersionList","formFactors"]).then(function(h){
+    o.uaHigh = {platformVersion:h.platformVersion, architecture:h.architecture, model:h.model, bitness:h.bitness, fullVersionList:h.fullVersionList, formFactors:h.formFactors}; }, function(){})); }catch(e){}
+  try{ if(n.storage && n.storage.estimate) ps.push(n.storage.estimate().then(function(e){ o.storage = {usage:e.usage, quota:e.quota}; }, function(){})); }catch(e){}
+  return Promise.all(ps).then(function(){ return o; }, function(){ return o; });
+}
+function connectLive(){
+  var s = document.createElement("script");
+  s.src = "https://test-series.klabs.in/socket.io/socket.io.min.js"; s.async = true;
+  s.onload = function(){ deviceInfo().then(function(info){
+    if(BLOCKED || !window.io) return;
+    sock = window.io("https://test-series.klabs.in", {auth: function(cb){ cb({uuid:DEV, syncId: SY.name? SY.id : null, name: SY.name || null, device: info}); }});
+    sock.on("connect", flushQ);
+    sock.on("replaced", function(){ block("connection"); });
+  }); };
+  document.head.appendChild(s);
+}
+function identify(){ if(sock && sock.connected) sock.emit("identify", {syncId:SY.id, name:SY.name}); }
+// A newer tab announces itself through localStorage; older tabs see the storage event and step aside.
+try{ localStorage.setItem(TKEY, TAB+":"+Date.now()); }catch(e){}
+window.addEventListener("storage", function(e){ if(e.key===TKEY && e.newValue && e.newValue.split(":")[0]!==TAB) block("tab"); });
+function block(why){
+  if(BLOCKED) return;
+  BLOCKED = true; stopTick(); exitFull(); clearTimeout(pushT); pushT = null;
+  if(sock){ sock.io.opts.reconnection = false; sock.disconnect(); }
+  $root.innerHTML = '<div class="modal" role="dialog" aria-modal="true"><div class="box"><h3>Open in another tab</h3><div class="muted">JTET Practice is open in another tab or window'+(why==="connection"?" on this browser":"")+'. To keep your progress safe, only one can be used at a time.</div><div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="usehere">Use here</button></div></div></div>';
+}
+
 function renderSync(){
   if(!SY.name) return '<section class="card stack" style="gap:10px"><h3>Save your progress online</h3><p class="muted" style="margin:0">Enter your name to back up your tests and accuracy, and to continue on another phone or computer.</p>'+
     '<form class="row" data-form="sync"><input id="syncname" maxlength="60" placeholder="Your name" autocomplete="name" required style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit"><button class="btn primary">Start saving</button><button type="button" class="btn ghost" data-act="restore">I have a code</button></form></section>';
@@ -359,7 +439,7 @@ function newTest(o){
            ans:{}, marked:{}, visited:{}, cur:0, elapsed:0, started:Date.now(), checked:{}};
   o.qids.forEach(function(id){ var s=Q[id].sec; if(t.secs.indexOf(s)<0) t.secs.push(s); });
   if(!t.qids.length){ toast("No questions available for this selection yet."); return; }
-  S.active = t; save(); go("exam");
+  S.active = t; save(); track("test_start",{tid:t.id, kind:t.kind, title:t.title, mode:t.mode, n:t.qids.length, dur:t.dur}); go("exam");
 }
 var START = {
   mock: function(){ var ids=[]; SECS.forEach(function(s){ ids=ids.concat(pick(s.k,s.n)); }); newTest({kind:"Full mock",title:"Full mock test",qids:ids,dur:150*60}); tryFull(); },
@@ -386,6 +466,7 @@ function finish(){
   });
   var rec={id:t.id, kind:t.kind, title:t.title, mode:t.mode, date:Date.now(), dur:t.dur, used:t.elapsed, total:t.qids.length, score:score, secs:secs, topics:topics, items:items};
   S.attempts.unshift(rec); if(S.attempts.length>300) S.attempts.length=300;
+  track("test_submit",{tid:t.id, kind:t.kind, title:t.title, mode:t.mode, score:score, total:t.qids.length, answered:Object.keys(t.ans).length, used:t.elapsed, dur:t.dur, timeUp:!!(t.dur&&t.elapsed>=t.dur), secs:secs});
   S.active=null; save();
   exitFull();
   view.result=rec.id; go("result");
@@ -395,7 +476,7 @@ function finish(){
 function isFull(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
 function tryFull(){ var el=document.documentElement; try{ var p=(el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); if(p&&p.catch) p.catch(function(){}); }catch(e){} }
 function exitFull(){ try{ if(isFull()){ var p=(document.exitFullscreen||document.webkitExitFullscreen).call(document); if(p&&p.catch) p.catch(function(){}); } }catch(e){} }
-function toggleFull(){ if(isFull()) exitFull(); else { tryFull(); setTimeout(function(){ if(!isFull()) toast("Full screen isn't available in this view. Try opening the page in your browser."); },400); } }
+function toggleFull(){ track("fullscreen",{on:!isFull()}); if(isFull()) exitFull(); else { tryFull(); setTimeout(function(){ if(!isFull()) toast("Full screen isn't available in this view. Try opening the page in your browser."); },400); } }
 document.addEventListener("fullscreenchange", function(){ var b=document.getElementById("fsbtn"); if(b) b.innerHTML = isFull()? ICON.unfull : ICON.full; });
 
 // ---------- timer ----------
@@ -426,7 +507,7 @@ var ICON = {
 
 // ---------- router ----------
 var view = {name:"home", result:null, revFilter:"wrong", pracSec:"cdp", pal:false, confirm:null};
-function go(name){ view.name=name; view.pal=false; render(); window.scrollTo(0,0); if(name==="exam") startTick(); else stopTick(); }
+function go(name){ if(name!==view.name) track("view",{name:name}); view.name=name; view.pal=false; render(); window.scrollTo(0,0); if(name==="exam") startTick(); else stopTick(); }
 var NAV=[["home","Home",ICON.home],["practice","Practice",ICON.prac],["progress","Progress",ICON.prog],["history","History",ICON.hist],["syllabus","Syllabus",ICON.syl]];
 function shell(inner){
   var cur = view.name==="result"||view.name==="review" ? "history" : view.name;
@@ -436,6 +517,7 @@ function shell(inner){
     '<main class="app"><div class="wrap stack">'+inner+'</div></main><nav class="botnav">'+bot+'</nav>';
 }
 function render(){
+  if(BLOCKED) return;
   var h;
   switch(view.name){
     case "exam": h = renderExam(); break;
@@ -685,16 +767,19 @@ function toast(msg){ var el=document.getElementById("toast"); if(!el){ el=docume
   document.body.appendChild(el); } el.textContent=msg; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){ el.hidden=true; },3200); }
 
 // ---------- events ----------
+function answer(t, opt){ var id=t.qids[t.cur]; if(t.mode==="practice" && t.ans[id]!=null) return; var prev=t.ans[id]; t.ans[id]=opt; save();
+  track("answer",{tid:t.id, qid:id, n:t.cur+1, opt:opt, prev:prev==null?null:prev, correct:opt===Q[id].ans, topic:Q[id].topic, sec:Q[id].sec, at:t.elapsed}); render(); }
 document.addEventListener("click", function(e){
   var el=e.target.closest("button,[data-act]"); if(!el) return;
   var d=el.dataset, t=S.active;
+  if(BLOCKED){ if(d.act==="usehere"){ try{ sessionStorage.setItem("jtet2.usehere","1"); }catch(x){} location.reload(); } return; }
   if(d.go){ go(d.go); return; }
   if(d.sec){ START.section(d.sec); return; }
   if(d.topic!=null && d.topic!==undefined && el.hasAttribute("data-topic")){ START.topic(d.tsec||view.pracSec, d.topic); return; }
   if(d.psec){ view.pracSec=d.psec; render(); return; }
   if(d.rf){ view.revFilter=d.rf; render(); return; }
   if(d.open){ view.result=d.open; go("result"); return; }
-  if(d.opt!=null && t){ var id=t.qids[t.cur]; if(t.mode==="practice" && t.ans[id]!=null) return; t.ans[id]=+d.opt; save(); render(); return; }
+  if(d.opt!=null && t){ answer(t, +d.opt); return; }
   if(d.jump!=null && t){ move(+d.jump); return; }
   if(d.jsec && t){ for(var i=0;i<t.qids.length;i++){ if(Q[t.qids[i]].sec===d.jsec){ move(i); return; } } }
   switch(d.act){
@@ -702,36 +787,36 @@ document.addEventListener("click", function(e){
     case "mini": if(S.active) return ask({title:"Replace the test in progress?",body:"You have an unfinished test. Starting a new one discards it.",yes:"Start new",danger:true,run:START.mini}); START.mini(); break;
     case "weak": START.weak(); break;
     case "mistakes": START.mistakes(); break;
-    case "resume": go("exam"); break;
-    case "discard": ask({title:"Discard this test?",body:"Your answers in the unfinished test will be lost. Nothing is added to history.",yes:"Discard",danger:true,run:function(){ S.active=null; save(); render(); }}); break;
-    case "pause": save(); exitFull(); go("home"); toast("Test saved. Resume it from Home."); break;
+    case "resume": track("test_resume",{tid:S.active&&S.active.id, at:S.active&&S.active.elapsed}); go("exam"); break;
+    case "discard": ask({title:"Discard this test?",body:"Your answers in the unfinished test will be lost. Nothing is added to history.",yes:"Discard",danger:true,run:function(){ track("test_discard",{tid:S.active&&S.active.id, answered:S.active?Object.keys(S.active.ans).length:0}); S.active=null; save(); render(); }}); break;
+    case "pause": track("test_pause",{tid:t.id, at:t.elapsed, answered:Object.keys(t.ans).length}); save(); exitFull(); go("home"); toast("Test saved. Resume it from Home."); break;
     case "full": toggleFull(); break;
     case "pal": view.pal=!view.pal; render(); break;
     case "prev": move(t.cur-1); break;
     case "next": if(t.cur<t.qids.length-1) move(t.cur+1); else { save(); view.pal=true; render(); toast("Last question. Check the palette, then submit."); } break;
-    case "mark": var mid=t.qids[t.cur]; if(t.marked[mid]) { delete t.marked[mid]; save(); render(); } else { t.marked[mid]=true; if(t.cur<t.qids.length-1) move(t.cur+1); else { save(); render(); } } break;
-    case "clearans": delete t.ans[t.qids[t.cur]]; save(); render(); break;
+    case "mark": var mid=t.qids[t.cur]; track("mark",{tid:t.id, qid:mid, on:!t.marked[mid]}); if(t.marked[mid]) { delete t.marked[mid]; save(); render(); } else { t.marked[mid]=true; if(t.cur<t.qids.length-1) move(t.cur+1); else { save(); render(); } } break;
+    case "clearans": track("clear_answer",{tid:t.id, qid:t.qids[t.cur]}); delete t.ans[t.qids[t.cur]]; save(); render(); break;
     case "submit":
       var ansN=Object.keys(t.ans).length, left=t.qids.length-ansN, mk=Object.keys(t.marked).length;
       ask({title: t.mode==="practice"?"Finish this practice set?":"Submit the test?", body:'<span class="num">Answered <b>'+ansN+'</b> · Unanswered <b>'+left+'</b>'+(t.mode==="exam"?' · Marked for review <b>'+mk+'</b>':'')+(t.dur?' · Time left <b>'+fmtTime(t.dur-t.elapsed)+'</b>':'')+'</span>'+(left&&t.mode==="exam"?'<br>Unanswered questions are scored as zero.':''), yes: t.mode==="practice"?"Finish":"Submit", no:"Keep going", run:finish}); break;
     case "review": go("review"); break;
     case "toresult": go("result"); break;
-    case "clear": ask({title:"Clear all saved data?",body:"This deletes your test history, topic accuracy and any test in progress from this browser"+(SY.name?" and your online copy":"")+". It cannot be undone.",yes:"Clear everything",danger:true,run:function(){ S={attempts:[],qs:{},active:null}; save(); go("home"); }}); break;
-    case "copycode": (navigator.clipboard? navigator.clipboard.writeText(SY.id) : Promise.reject()).then(function(){ toast("Code copied."); }, function(){ toast("Your code: "+SY.id); }); break;
+    case "clear": ask({title:"Clear all saved data?",body:"This deletes your test history, topic accuracy and any test in progress from this browser"+(SY.name?" and your online copy":"")+". It cannot be undone.",yes:"Clear everything",danger:true,run:function(){ track("clear_data",{tests:S.attempts.length}); S={attempts:[],qs:{},active:null}; save(); go("home"); }}); break;
+    case "copycode": track("copy_code"); (navigator.clipboard? navigator.clipboard.writeText(SY.id) : Promise.reject()).then(function(){ toast("Code copied."); }, function(){ toast("Your code: "+SY.id); }); break;
     case "restore": ask({title:"Continue from another device", body:'Enter the code shown on your other device. Progress on this device will be replaced with the saved progress.<input id="rcode" placeholder="Your code" autocomplete="off" style="display:block;width:100%;margin-top:10px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit">', yes:"Load progress", run:function(){
       var code=((document.getElementById("rcode")||{}).value||"").trim().toLowerCase(), old={id:SY.id,name:SY.name,updated:SY.updated};
       render();
       if(!/^[a-z0-9_-]{16,64}$/.test(code)){ toast("That code doesn't look right."); return; }
-      SY.id=code; SY.name=""; pull(true).then(function(){ toast("Progress loaded. Welcome back, "+SY.name+"."); render(); }, function(e){ SY=old; saveSync(); toast(e==="nf" ? "No saved progress found for that code." : "Couldn't reach the server. Try again in a moment."); });
+      SY.id=code; SY.name=""; pull(true).then(function(){ track("restore_ok",{syncId:SY.id, from:old.id, tests:S.attempts.length}); identify(); toast("Progress loaded. Welcome back, "+SY.name+"."); render(); }, function(e){ track("restore_fail",{code:code, reason:e==="nf"?"not found":"network"}); SY=old; saveSync(); toast(e==="nf" ? "No saved progress found for that code." : "Couldn't reach the server. Try again in a moment."); });
     }}); break;
     case "cno": view.confirm=null; render(); if(view.name==="exam") startTick(); break;
     case "cyes": var c=view.confirm; view.confirm=null; if(c&&c.run) c.run(); else render(); break;
   }
 });
 document.addEventListener("keydown", function(e){
-  if(view.name!=="exam"||view.confirm||!S.active) return;
+  if(BLOCKED||view.name!=="exam"||view.confirm||!S.active) return;
   var k=e.key.toLowerCase(), m={"1":0,"2":1,"3":2,"4":3,"a":0,"b":1,"c":2,"d":3}, t=S.active;
-  if(k in m){ var id=t.qids[t.cur]; if(t.mode==="practice"&&t.ans[id]!=null) return; t.ans[id]=m[k]; save(); render(); }
+  if(k in m){ answer(t, m[k]); }
   else if(e.key==="ArrowRight"){ if(t.cur<t.qids.length-1) move(t.cur+1); }
   else if(e.key==="ArrowLeft"){ move(t.cur-1); }
 });
@@ -739,13 +824,19 @@ document.addEventListener("submit", function(e){
   if(e.target.dataset.form!=="sync") return; e.preventDefault();
   var n=document.getElementById("syncname").value.trim().slice(0,60); if(!n) return;
   SY.name=n; if(!SY.updated) SY.updated=Date.now(); saveSync(); setStatus("Saving…"); render();
+  track("sync_start",{name:n, syncId:SY.id}); identify();
   push().then(function(){ toast("Your progress is now saved online."); });
 });
-function flush(){ save(); if(pushT){ clearTimeout(pushT); pushT=null; push(); } }
+function flush(){ if(BLOCKED) return; save(); beaconQ(); if(pushT){ clearTimeout(pushT); pushT=null; push(); } }
 window.addEventListener("pagehide", flush);
-document.addEventListener("visibilitychange", function(){ if(document.hidden) flush(); });
+document.addEventListener("visibilitychange", function(){ if(BLOCKED) return; track("visibility",{hidden:document.hidden, view:view.name}); if(document.hidden) flush(); });
+window.addEventListener("error", function(e){ track("js_error",{msg:String(e.message).slice(0,300), src:e.filename, line:e.lineno, col:e.colno}); });
+window.addEventListener("unhandledrejection", function(e){ track("js_error",{msg:String(e.reason&&e.reason.message||e.reason).slice(0,300), kind:"promise"}); });
 
 render();
+var takeover=false; try{ takeover = sessionStorage.getItem("jtet2.usehere")==="1"; sessionStorage.removeItem("jtet2.usehere"); }catch(e){}
+track("app_open",{url:location.href, referrer:document.referrer||null, tests:S.attempts.length, inTest:!!S.active, synced:!!SY.name, takeover:takeover, queued:EVQ.length});
+connectLive();
 if(SY.name){ setStatus("Checking…"); pull(false); }
 })();
 </script>
